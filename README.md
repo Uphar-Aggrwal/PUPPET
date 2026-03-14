@@ -89,14 +89,14 @@ puppet/
 
 ## Tech Stack
 
-| Tool | Purpose | Cost |
-|---|---|---|
-| Python 3.x | Core language | Free |
-| Streamlit | Web app + live deployment | Free |
-| Groq API | LLM inference for Act 2 | Free tier |
-| Pandas | Data handling | Free |
-| Plotly | Interactive visualisations | Free |
-| JSON | Act 1 data store | Free |
+| Tool | Purpose | 
+|---|---|
+| Python 3.x | Core language |
+| Streamlit | Web app + live deployment |
+| Groq API | LLM inference for Act 2 |
+| Pandas | Data handling |
+| Plotly | Interactive visualisations |
+| JSON | Act 1 data store |
 
 ---
 
