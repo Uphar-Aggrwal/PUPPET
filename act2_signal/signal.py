@@ -275,6 +275,7 @@ def show_act2():
         # Get RAG research
         rag = get_rag_engine()
         research_context = ""
+        research_data = {}
         
         if rag:
             # SINGLE clean message
@@ -283,17 +284,19 @@ def show_act2():
                     research_data = rag.research(topic)
                     research_context = research_data.get("research_context", "")
                     
-                    # Show research to user (visible, not hidden)
-                    st.markdown("### 📚 Sources Found")
-                    with st.expander(f"View {len(research_data.get('chunks', []))} research sources"):
-                        st.markdown(research_context)
+                    # ✨ FIX #2: Store research in session_state (persists across st.rerun())
+                    st.session_state["last_research_data"] = research_data
+                    st.session_state["last_research_topic"] = topic
+                    st.session_state["show_research"] = True  # Keep expander open
                     
                 except Exception as e:
                     st.warning(f"Could not fetch live data. Using knowledge cutoff.")
                     research_context = ""
+                    st.session_state["show_research"] = False
         else:
             st.info("Using knowledge cutoff (no live data)")
             research_context = ""
+            st.session_state["show_research"] = False
 
         # Get persona responses silently (no more spinners/messages)
         with st.spinner("Analyzing..."):
@@ -313,12 +316,40 @@ def show_act2():
 
         st.rerun()
         
-    # ── Show stored responses ──────────────────────────────────────────────────
+    # ── Show stored responses (WITH research visible) ────────────────────────
     if "last_active" in st.session_state and "last_topic" in st.session_state:
         st.divider()
         st.markdown(f"**Topic:** *\"{st.session_state['last_topic']}\"*")
         st.caption("Same model. Same question. Five different sets of instructions. Watch what changes.")
         st.markdown("<br>", unsafe_allow_html=True)
+
+        # ✨ FIX #2: Research section (stays visible even after personas run)
+        if st.session_state.get("last_research_data"):
+            research_data = st.session_state["last_research_data"]  # Retrieve from session_state
+            research_context = research_data.get("research_context", "")
+            chunks = research_data.get("chunks", [])
+            
+            st.markdown("### 📚 Sources Found")
+            
+            # Keep expander open after personas generate (unless user collapses it)
+            is_open = st.session_state.get("show_research", False)
+            
+            with st.expander(
+                f"View {len(chunks)} research sources", 
+                expanded=is_open  # ✨ Expander defaults to open
+            ):
+                st.markdown(research_context)
+                
+                # ✨ Add verification note
+                st.divider()
+                st.caption(
+                    "✅ **These sources were used by all 5 personas.** "
+                    "They each interpreted the same facts differently based on their system prompt. "
+                    "That's the point."
+                )
+        
+        # ── Personas section ────────────────────────────────────────────────────
+        st.divider()
 
         for key in st.session_state["last_active"]:
             persona = PERSONAS[key]
@@ -346,8 +377,8 @@ def show_act2():
         st.divider()
         st.info(
             "You asked five versions of the same AI the same question.\n\n"
-            "They gave you five different answers — different facts, "
-            "different framings, different emotions triggered.\n\n"
+            "They gave you five different answers — **using the same research sources** — "
+            "different facts highlighted, different framings, different emotions triggered.\n\n"
             "**None of them were lying.** They were all doing exactly "
             "what they were designed to do.\n\n"
             "**The question is: who designed the one you usually get?**"
