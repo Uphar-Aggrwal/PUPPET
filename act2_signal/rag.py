@@ -96,7 +96,7 @@ class ComplexityDetector:
 
 
 # ============================================================================
-# PART 2: FREE WEB SEARCH (SerpAPI)
+# PART 2: FREE WEB SEARCH (SerpAPI) — WITH ENHANCED ERROR HANDLING
 # ============================================================================
 
 class FreeWebSearch:
@@ -115,9 +115,13 @@ class FreeWebSearch:
         """
         
         if not self.api_key:
-            st.warning(
-                "⚠️ SerpAPI key not configured. "
-                "Get free key at https://serpapi.com"
+            st.error(
+                "❌ **SerpAPI key not configured.**\n\n"
+                "**To fix:**\n"
+                "1. Go to your Streamlit Cloud app dashboard\n"
+                "2. Click 'Settings' → 'Secrets'\n"
+                "3. Add: `SERP_API_KEY=your_key_here`\n\n"
+                "Get a **free key** at https://serpapi.com (100 queries/month)"
             )
             return self._mock_results(query, num_results)
         
@@ -137,39 +141,74 @@ class FreeWebSearch:
             response.raise_for_status()
             
             data = response.json()
-            results = []
             
-            # Parse SerpAPI organic results
-            for item in data.get("organic_results", [])[:num_results]:
+            # ✨ FIX #1: Check if API returned an error in response
+            if "error" in data:
+                error_msg = data.get("error", "Unknown error")
+                st.error(f"❌ **SerpAPI Error:** {error_msg}")
+                
+                if "API key" in error_msg.lower():
+                    st.error("Your SerpAPI key is invalid, expired, or has been revoked.")
+                elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
+                    st.error("❌ **Free tier quota exceeded** — You've used 100 queries this month. Please wait until next month.")
+                
+                return self._mock_results(query, num_results)
+            
+            results = []
+            organic_results = data.get("organic_results", [])
+            
+            # ✨ FIX #2: Check if we got NO results
+            if not organic_results:
+                st.warning("⚠️ No results found. SerpAPI may be rate-limited or quota exceeded.")
+                return self._mock_results(query, num_results)
+            
+            # Parse results
+            for item in organic_results[:num_results]:
                 results.append({
                     "title": item.get("title", ""),
                     "url": item.get("link", ""),
                     "snippet": item.get("snippet", ""),
-                    "source": "SerpAPI",
+                    "source": "SerpAPI (REAL)",  # ✨ Mark as REAL for distinction
                     "timestamp": datetime.now().isoformat()
                 })
             
-            return results if results else self._mock_results(query, num_results)
+            # ✨ FIX #3: Confirm success to user
+            st.success(f"✅ Found {len(results)} real sources from the internet")
+            return results
         
         except requests.exceptions.Timeout:
+            st.error("❌ **SerpAPI timeout** — Connection took too long. Try again.")
             return self._mock_results(query, num_results)
         
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 429:
-                st.warning("Free tier quota exceeded this month")
+                st.error("❌ **Rate limited** — Too many requests. Free tier quota may be exceeded (100/month).")
+            elif e.response.status_code == 401:
+                st.error("❌ **Authentication failed** — Your SerpAPI key is invalid or has been revoked.")
+            elif e.response.status_code == 403:
+                st.error("❌ **Access denied** — Your account may be suspended or restricted.")
+            else:
+                st.error(f"❌ **HTTP Error {e.response.status_code}** — SerpAPI returned an error.")
+            return self._mock_results(query, num_results)
+        
+        except requests.exceptions.ConnectionError:
+            st.error("❌ **Connection error** — Cannot reach SerpAPI. Check your internet connection.")
             return self._mock_results(query, num_results)
         
         except Exception as e:
+            # ✨ FIX #4: Show the actual error instead of silencing it
+            st.error(f"❌ **Unexpected error:** {str(e)[:200]}")
+            st.error("Falling back to demo results. Check your SerpAPI configuration.")
             return self._mock_results(query, num_results)
     
     def _mock_results(self, query: str, num: int) -> List[Dict]:
-        """Fallback mock results."""
+        """Fallback mock results — clearly marked as DEMO."""
         return [
             {
-                "title": f"Demo Result {i+1}",
+                "title": f"[DEMO] Result {i+1}",
                 "url": f"https://example{i}.com",
-                "snippet": f"Demo search result for '{query}'",
-                "source": "Mock",
+                "snippet": f"[This is demo data — SerpAPI not configured or quota exceeded] Search result for '{query}'",
+                "source": "MOCK (Demo)",  # ✨ Clearly mark as MOCK, not real
                 "timestamp": datetime.now().isoformat()
             }
             for i in range(min(num, 3))
@@ -230,22 +269,18 @@ class ResearchChunker:
             if strategy == "title_snippet":
                 # Simple: title + snippet = 1 chunk
                 chunk_text = f"{result['title']}\n\n{result['snippet']}"
-                
                 chunks.append({
                     "text": chunk_text,
                     "source_title": result.get("title", ""),
                     "source_url": result.get("url", ""),
                     "original_result": result
                 })
-            
-            elif strategy == "split":
-                # Split long snippets into multiple chunks with overlap
-                full_text = f"{result['title']}. {result['snippet']}"
-                text_chunks = self._split_text(full_text)
-                
-                for chunk_text in text_chunks:
+            else:
+                # Split: break snippet into overlapping chunks
+                split_chunks = self._split_text(result["snippet"])
+                for chunk in split_chunks:
                     chunks.append({
-                        "text": chunk_text,
+                        "text": f"{result['title']}\n\n{chunk}",
                         "source_title": result.get("title", ""),
                         "source_url": result.get("url", ""),
                         "original_result": result
